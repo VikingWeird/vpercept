@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>感知实验</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1 id="titleText">欢迎参加感知实验</h1>
+        <button id="startBtn" class="start-btn">开始实验</button>
+        <div id="choiceButtons" class="choice-buttons" style="display: none;">
+            <button class="choice-btn" id="btnA">A</button>
+            <button class="choice-btn" id="btnB">B</button>
+        </div>
+        <div id="resultInfo" style="margin-top: 10px; color: green;"></div>
+        <audio id="audioPlayer"></audio>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const choiceButtons = document.getElementById('choiceButtons');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const titleText = document.getElementById('titleText');
+        const resultInfo = document.getElementById('resultInfo');
+        
+        let audioFiles = [];
+        let currentIndex = 0;
+        let responses = [];
+        let startTime = 0; // 记录开始播放的时间
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        async function loadAudioFiles() {
+            try {
+                const response = await fetch('/list-wav');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const files = await response.json();
+                
+                if (files && files.length > 0) {
+                    audioFiles = files;
+                    shuffleArray(audioFiles);
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                console.error('读取音频文件列表失败:', error);
+                return false;
+            }
+        }
+
+        async function saveResults(timestamp) {
+            try {
+                console.log(`正在保存结果到 result_${timestamp}.txt`);
+                const response = await fetch('/save-response', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        timestamp: timestamp,
+                        responses: responses
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('保存结果失败');
+                }
+
+                const result = await response.json();
+                console.log('保存成功:', result);
+            } catch (error) {
+                console.error('保存结果失败:', error);
+                resultInfo.textContent = '结果保存失败，请联系管理员';
+                resultInfo.style.color = 'red';
+            }
+        }
+
+        function playNextAudio() {
+            if (currentIndex >= audioFiles.length) {
+                const now = new Date();
+                const timestamp = now.getFullYear() +
+                    String(now.getMonth() + 1).padStart(2, '0') +
+                    String(now.getDate()).padStart(2, '0') + '_' +
+                    String(now.getHours()).padStart(2, '0') +
+                    String(now.getMinutes()).padStart(2, '0') +
+                    String(now.getSeconds()).padStart(2, '0');
+                
+                saveResults(timestamp);
+                
+                titleText.textContent = '实验结束';
+                choiceButtons.style.display = 'none';
+                resultInfo.textContent = `结果已保存到: result_${timestamp}.txt`;
+                return;
+            }
+            
+            const fileName = audioFiles[currentIndex];
+            const audioPath = `./wav/${fileName}`;
+            
+            audioPlayer.src = audioPath;
+            audioPlayer.play()
+                .then(() => {
+                    startTime = Date.now(); // 记录开始播放的时间
+                })
+                .catch(error => {
+                    console.error('播放失败:', error);
+                });
+        }
+
+        function recordChoiceAndPlayNext(choice) {
+            const endTime = Date.now();
+            const reactionTime = endTime - startTime; // 计算反应时间（毫秒）
+            
+            // 记录当前文件、用户选择和反应时间
+            responses.push({
+                file: audioFiles[currentIndex],
+                choice: choice,
+                reactionTime: reactionTime
+            });
+            
+            console.log('记录选择:', audioFiles[currentIndex], choice, reactionTime + 'ms');
+            
+            currentIndex++;
+            playNextAudio();
+        }
+
+        startBtn.addEventListener('click', async () => {
+            const filesLoaded = await loadAudioFiles();
+            
+            if (filesLoaded) {
+                startBtn.style.display = 'none';
+                choiceButtons.style.display = 'flex';
+                titleText.textContent = '请选择听到的声音';
+                currentIndex = 0;
+                responses = [];
+                playNextAudio();
+            } else {
+                titleText.textContent = '未找到音频文件，请确认wav目录中包含.wav文件';
+            }
+        });
+
+        document.getElementById('btnA').addEventListener('click', () => {
+            recordChoiceAndPlayNext('A');
+        });
+
+        document.getElementById('btnB').addEventListener('click', () => {
+            recordChoiceAndPlayNext('B');
+        });
+    </script>
+</body>
+</html> 
